@@ -1,0 +1,11 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+sweeps/
+certs/
+markers/*.png
+.pytest_cache/
+.ruff_cache/
+ground_truth*.xlsx
+!docs/ground_truth_template.xlsx

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="lca-key" content="__TOKEN__">
+<title>Library Claim Sweep</title>
+<link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+<header>
+  <b>Library contents claim</b>
+  <span id="conn" class="pill off">offline</span>
+  <span id="locale" class="pill">US · USD</span>
+</header>
+<main>
+  <section id="cam">
+    <video id="video" playsinline muted autoplay></video>
+    <div id="chips"></div>
+    <div id="counts">0 books · 0 items</div>
+    <div id="controls">
+      <button id="connect">Connect (mic + camera)</button>
+      <button id="start" disabled>Start sweep</button>
+      <button id="end" disabled>End sweep</button>
+      <select id="country"><option>US</option><option>GB</option><option>IN</option><option>DE</option></select>
+      <label class="file">Test with video file<input id="file" type="file" accept="video/*"></label>
+    </div>
+    <div id="packet" hidden></div>
+  </section>
+  <section id="side">
+    <h3>Talking</h3>
+    <div id="transcript"></div>
+    <h3>Logged books <small id="bk"></small></h3>
+    <ol id="books" reversed></ol>
+    <h3>Other contents</h3>
+    <ul id="items"></ul>
+    <h3>App notices</h3>
+    <ul id="notices"></ul>
+  </section>
+</main>
+<canvas id="grab" hidden></canvas>
+<script src="/static/app.js"></script>
+</body>
+</html>
