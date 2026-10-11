@@ -5,6 +5,8 @@
     python -m library_claim.cli process sweeps/<id>         # re-run all stages on saved frames
     python -m library_claim.cli process my_sweep.mp4        # run on a recorded video (no live agent)
     python -m library_claim.cli reprice sweeps/<id> --country GB --limit 10
+    python -m library_claim.cli doctor [--live] [--depth]  # pre-flight checks
+    python -m library_claim.cli try-photo shelf.jpg         # read + identify + measure one photo
     python -m library_claim.cli gt-template ground_truth.xlsx
     python -m library_claim.cli score sweeps/<id> ground_truth.xlsx
 """
@@ -109,7 +111,7 @@ async def _reprice(a):
 
 
 def main(argv=None):
-    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.WARNING if (argv or sys.argv[1:2]) and (argv or sys.argv[1:])[0] in ("doctor", "try-photo") else logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     from .config import SETTINGS
     ap = argparse.ArgumentParser(prog="library_claim")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -130,6 +132,12 @@ def main(argv=None):
     rp.add_argument("sweep")
     rp.add_argument("--country", required=True)
     rp.add_argument("--limit", type=int, default=10)
+    dr = sub.add_parser("doctor")
+    dr.add_argument("--live", action="store_true")
+    dr.add_argument("--depth", action="store_true")
+    tp = sub.add_parser("try-photo")
+    tp.add_argument("photo")
+    tp.add_argument("--country", default=SETTINGS.default_country)
     g = sub.add_parser("gt-template")
     g.add_argument("out")
     sc = sub.add_parser("score")
@@ -144,6 +152,12 @@ def main(argv=None):
         asyncio.run(_process(a))
     elif a.cmd == "reprice":
         asyncio.run(_reprice(a))
+    elif a.cmd == "doctor":
+        from .doctor import doctor
+        sys.exit(doctor(a.live, a.depth))
+    elif a.cmd == "try-photo":
+        from .doctor import try_photo
+        try_photo(a.photo, a.country)
     elif a.cmd == "gt-template":
         from .eval.score import write_template
         write_template(Path(a.out))

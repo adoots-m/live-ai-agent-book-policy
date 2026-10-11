@@ -9,7 +9,7 @@ A live voice-and-vision insurance agent that inventories and values a home libra
 
 Totals are computed in code from the lines (`library_claim/packet/totals.py`). Every number traces back to a saved frame (`frame_ref`) and, for prices, to a URL and date.
 
-> **Status (be honest):** everything below is implemented and covered by 32 automated tests on synthetic data with mocked models (`pytest`). It has **not** yet been run end-to-end against the live Gemini APIs on a real room — that run, the ground truth, the demo video and the failure log come from the real sweep (see [docs/RUNBOOK.md](docs/RUNBOOK.md)).
+> **Status (be honest):** everything below is implemented and covered by 33 automated tests on synthetic data with mocked models (`pytest`). It has **not** yet been run end-to-end against the live Gemini APIs on a real room — that run, the ground truth, the demo video and the failure log come from the real sweep (see [docs/RUNBOOK.md](docs/RUNBOOK.md)).
 
 ---
 
@@ -26,7 +26,9 @@ pip install torch --index-url https://download.pytorch.org/whl/cpu   # room-meas
 pip install -r requirements-depth.txt
 cp .env.example .env            # Windows: copy .env.example .env   -> put your GOOGLE_API_KEY in it
 python -m library_claim.cli marker          # writes markers/marker_0.png; print it at 100 % scale
-python -m pytest                            # 32 tests, ~20 s, no API key needed
+python -m pytest                            # 33 tests, ~20 s, no API key needed
+python -m library_claim.cli doctor --live --depth   # checks key, model names, search grounding, Live, free APIs, depth model
+python -m library_claim.cli try-photo shelf.jpg     # one photo of a shelf (with the marker): read, identify, measure
 python -m library_claim.live                # prints https://<your-ip>:4177/?k=<key>
 ```
 
@@ -124,6 +126,6 @@ Before the first real run, a rough **estimate** for a 3-minute sweep of ~60 book
 ## Tests
 
 ```bash
-python -m pytest          # 32 tests: tracking, marker scale, measurement, room fit (synthetic clouds and a ray-traced room),
+python -m pytest          # 33 tests: tracking, marker scale, measurement, room fit (synthetic clouds and a ray-traced room),
                           # pricing verification, identification refusal, totals, scorer, websocket flow, full synthetic sweep
 ```
