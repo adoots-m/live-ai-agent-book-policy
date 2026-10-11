@@ -214,6 +214,8 @@ async def live_ws(ws: WebSocket):
         pending = {"user": "", "agent": ""}
         while True:
             async for r in live.receive():
+                if getattr(r, "usage_metadata", None):
+                    session.ledger.add_live_usage(r.usage_metadata)
                 if r.tool_call and r.tool_call.function_calls:
                     for fc in r.tool_call.function_calls:
                         asyncio.create_task(run_tool(fc, live))

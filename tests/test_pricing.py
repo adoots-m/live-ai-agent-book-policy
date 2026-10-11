@@ -120,3 +120,18 @@ def test_locale_is_a_setting():
     assert locale_for("uk").currency == "GBP" and locale_for("US").currency == "USD"
     with pytest.raises(ValueError):
         locale_for("Narnia")
+
+
+def test_budget_cap_stops_pricing(monkeypatch):
+    from library_claim import llm
+    monkeypatch.setattr(llm, "SETTINGS", llm.SETTINGS.__class__(max_usd_per_sweep=0.01))
+    led = Ledger()
+    led.add("vision_read", 100_000, 10_000, 100)          # ~$0.11 already spent
+
+    async def must_not_run(*a, **k):
+        raise AssertionError("search ran past the cap")
+    monkeypatch.setattr(llm, "client", must_not_run)
+    r = asyncio.run(pb.price_book("Dune", "Herbert", "", "", locale_for("US"), led))
+    assert r.replacement.amount is None and any("cap" in m for m in r.review)
+    led.add_live_usage(None)
+    assert led.report()["budget_cap_usd"] == 0.01

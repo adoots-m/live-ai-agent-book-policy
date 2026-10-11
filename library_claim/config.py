@@ -103,11 +103,25 @@ class Settings:
     pricing_concurrency: int = field(default_factory=lambda: int(_f("LCA_PRICING_CONCURRENCY", 6)))
     depth_model: str = field(default_factory=lambda: os.getenv("LCA_DEPTH_MODEL", "depth-anything/Depth-Anything-V2-Metric-Indoor-Small-hf"))
     http_timeout_s: float = field(default_factory=lambda: _f("LCA_HTTP_TIMEOUT_S", 12))
-    # USD per 1M tokens, for the cost report. Override when prices change.
-    price_in_per_m: float = field(default_factory=lambda: _f("LCA_PRICE_IN_PER_M", 0.30))
-    price_out_per_m: float = field(default_factory=lambda: _f("LCA_PRICE_OUT_PER_M", 2.50))
-    live_price_per_min: float = field(default_factory=lambda: _f("LCA_LIVE_PRICE_PER_MIN", 0.05))
+    # Cost report rates, USD. Defaults = Gemini API paid tier as published at
+    # https://ai.google.dev/gemini-api/docs/pricing on 2026-10-11 (gemini-3.8-flash
+    # $0.75 in / $3.75 out per 1M tokens until 2026-12-31; Live audio in $0.005/min,
+    # video in $0.002/min, audio out $0.018/min; Search grounding $14 / 1,000 after
+    # 5,000 free per month). Override when prices change.
+    price_in_per_m: float = field(default_factory=lambda: _f("LCA_PRICE_IN_PER_M", 0.75))
+    price_out_per_m: float = field(default_factory=lambda: _f("LCA_PRICE_OUT_PER_M", 3.75))
+    live_price_per_min: float = field(default_factory=lambda: _f("LCA_LIVE_PRICE_PER_MIN", 0.025))
     search_price_per_call: float = field(default_factory=lambda: _f("LCA_SEARCH_PRICE_PER_CALL", 0.014))
+    # Live API per-1M-token rates by modality (used when the Live session reports usage).
+    live_in_text_per_m: float = field(default_factory=lambda: _f("LCA_LIVE_IN_TEXT_PER_M", 0.75))
+    live_in_audio_per_m: float = field(default_factory=lambda: _f("LCA_LIVE_IN_AUDIO_PER_M", 3.00))
+    live_in_video_per_m: float = field(default_factory=lambda: _f("LCA_LIVE_IN_VIDEO_PER_M", 1.00))
+    live_out_text_per_m: float = field(default_factory=lambda: _f("LCA_LIVE_OUT_TEXT_PER_M", 4.50))
+    live_out_audio_per_m: float = field(default_factory=lambda: _f("LCA_LIVE_OUT_AUDIO_PER_M", 12.00))
+    # Guards: pricing searches stop (lines go to review) once this sweep's
+    # estimated spend passes the cap; vision reads stop after this many calls.
+    max_usd_per_sweep: float = field(default_factory=lambda: _f("LCA_MAX_USD_PER_SWEEP", 8.0))
+    max_vision_calls: int = field(default_factory=lambda: int(_f("LCA_MAX_VISION_CALLS", 250)))
 
 
 SETTINGS = Settings()

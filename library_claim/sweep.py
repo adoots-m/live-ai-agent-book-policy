@@ -33,7 +33,7 @@ import numpy as np
 from .capture.frames import FrameStore
 from .config import SETTINGS, Locale, locale_for
 from .identify.catalogue import Resolution, resolve
-from .llm import Ledger, call_json
+from .llm import BudgetExceeded, Ledger, call_json
 from .measure import spines as spine_measure
 from .measure.room import DepthModel, RoomBuilder
 from .measure.scale import MarkerHit, detect_markers
@@ -104,6 +104,7 @@ class SweepSession:
         self._workers: list[asyncio.Task] = []
         self.last_frame_id = ""
         self._last_room_t = -1e9
+        self.vision_skipped: list[str] = []
 
     # ------------------------------------------------------------------ lifecycle
     def start(self) -> None:
@@ -191,7 +192,11 @@ class SweepSession:
             if cache.exists():
                 fv = FrameVision.model_validate_json(cache.read_text(encoding="utf-8"))
             else:
-                fv = await read_frame(img, fid, self.ledger)
+                try:
+                    fv = await read_frame(img, fid, self.ledger)
+                except BudgetExceeded:
+                    self.vision_skipped.append(fid)
+                    return
                 cache.write_text(fv.model_dump_json(indent=1), encoding="utf-8")
         async with self._lock:
             self.vision[fid] = fv
@@ -414,7 +419,13 @@ class SweepSession:
                                        item_prices=item_prices, corrections=applied)
         self.packet.meta["time_to_packet_s"] = round(time.perf_counter() - t_end, 1)
         self.packet.meta["cost"] = L.report()
+        if self.vision_skipped:
+            from .schemas import ReviewEntry
+            self.packet.review_queue.append(ReviewEntry(
+                ref_id="capture", kind="capture",
+                reason=f"{len(self.vision_skipped)} keyframes not read: vision call cap reached (LCA_MAX_VISION_CALLS)"))
         self._write_stage("corrections", applied)
+        _append_usage_log(self)
         from .packet.report import write_outputs
         write_outputs(self.packet, self.dir)
         self.finished = True
@@ -501,6 +512,26 @@ class SweepSession:
 
     def _write_stage(self, name: str, data: Any) -> None:
         (self.dir / "stages" / f"{name}.json").write_text(json.dumps(data, indent=1, default=str), encoding="utf-8")
+
+
+def _append_usage_log(s: "SweepSession") -> None:
+    """One row per sweep in <data_dir>/usage_log.csv, to reconcile with AI Studio's usage page."""
+    import csv
+    rep = s.packet.meta["cost"]
+    st = rep["stages"]
+    row = {"sweep_id": s.id, "finished_at": datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
+           "country": s.locale.country, "duration_s": s.duration_s,
+           "model_calls": sum(v["calls"] for v in st.values()), "search_calls": sum(v["search_calls"] for v in st.values()),
+           "tokens_in": sum(v["tokens_in"] for v in st.values()), "tokens_out": sum(v["tokens_out"] for v in st.values()),
+           "live_session_s": rep["live_session_s"], "est_cost_usd": rep["total_cost_usd"],
+           "time_to_packet_s": s.packet.meta.get("time_to_packet_s")}
+    path = SETTINGS.data_dir / "usage_log.csv"
+    new = not path.exists()
+    with open(path, "a", newline="", encoding="utf-8") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(row))
+        if new:
+            w.writeheader()
+        w.writerow(row)
 
 
 def _dist_to(box, cx, cy) -> float:

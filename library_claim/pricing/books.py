@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 from statistics import median
 
 from ..config import LOCALES, Locale
-from ..llm import Ledger, grounded_search, parse_json
+from ..llm import BudgetExceeded, Ledger, grounded_search, parse_json
 from ..schemas import Money, UsedMoney
 from . import fx
 from .verify import VerifiedOffer, offers_from_json, verify_all
@@ -119,8 +119,12 @@ async def price_book(title: str, author: str, edition: str, isbn: str, loc: Loca
     if rarity_flags:
         out.appraisal_reason = "rarity indicators: " + ", ".join(rarity_flags)
         return out
-    new, v_new = await _figure("new", loc, title, author, edition, isbn, ledger, out)
-    used, v_used = await _figure("used", loc, title, author, edition, isbn, ledger, out)
+    try:
+        new, v_new = await _figure("new", loc, title, author, edition, isbn, ledger, out)
+        used, v_used = await _figure("used", loc, title, author, edition, isbn, ledger, out)
+    except BudgetExceeded as exc:
+        out.review.append(f"not priced: {exc}")
+        return out
     top = max([o.amount for o in v_new + v_used] + [0])
     if new and new.converted:
         top = max(top, new.amount or 0)

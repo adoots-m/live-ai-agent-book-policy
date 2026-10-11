@@ -20,6 +20,8 @@ from .config import ROOT, SETTINGS
 
 OK, BAD, SKIP = "PASS", "FAIL", "SKIP"
 results: list[tuple[str, str, str]] = []
+led_ref: list = []
+led_total: list[float] = []
 
 
 def report(name: str, status: str, detail: str = "") -> None:
@@ -53,6 +55,8 @@ def check_local() -> None:
     else:
         report("printable marker", BAD, "run: python -m library_claim.cli marker")
     report("marker side setting", OK, f"LCA_MARKER_SIDE_CM={SETTINGS.marker_side_cm} (must equal your ruler measurement)")
+    report("cost guards", OK, f"LCA_MAX_USD_PER_SWEEP=${SETTINGS.max_usd_per_sweep:.2f}, LCA_MAX_VISION_CALLS={SETTINGS.max_vision_calls}; "
+           f"rates in ${SETTINGS.price_in_per_m}/{SETTINGS.price_out_per_m} per 1M, search ${SETTINGS.search_price_per_call}")
     report("camera FOV setting", OK, f"LCA_CAMERA_HFOV_DEG={SETTINGS.camera_hfov_deg} (calibrate with calibrate-fov)")
     try:
         import cryptography  # noqa: F401
@@ -107,6 +111,7 @@ async def check_gemini(live: bool) -> None:
         elif names:
             report(f"{label} '{model}' exists", OK)
     led = Ledger()
+    led_ref.append(led)
     try:
         img = np.full((480, 640, 3), 235, np.uint8)
         cv2.putText(img, "THE HOBBIT", (40, 250), cv2.FONT_HERSHEY_SIMPLEX, 2.2, (20, 20, 20), 5)
@@ -125,6 +130,7 @@ async def check_gemini(live: bool) -> None:
                "no grounding sources returned (pricing will drop every offer)")
     except Exception as e:
         report("Google Search grounding", BAD, repr(e)[:200])
+    led_total.append(led.cost_so_far())
     if live:
         await check_live()
     else:
@@ -197,6 +203,8 @@ async def _doctor(live: bool, depth: bool) -> None:
 def doctor(live: bool = False, depth: bool = False) -> int:
     asyncio.run(_doctor(live, depth))
     bad = [r for r in results if r[1] == BAD]
+    if led_total:
+        print(f"\nThis doctor run cost about ${led_total[0]:.3f}.")
     print(f"\n{len(results) - len(bad)} ok / {len(bad)} failed" + ("" if not bad else ":  " + "; ".join(r[0] for r in bad)))
     return 1 if bad else 0
 

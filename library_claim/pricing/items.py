@@ -13,7 +13,7 @@ from __future__ import annotations
 from statistics import quantiles
 
 from ..config import Locale
-from ..llm import Ledger, grounded_search, parse_json
+from ..llm import BudgetExceeded, Ledger, grounded_search, parse_json
 from ..schemas import ItemCost, Money
 from .books import COUNTRY_NAMES
 from .verify import offers_from_json, verify_all
@@ -36,9 +36,12 @@ async def price_item(category: str, description: str, brand_model: str, material
     size = ", ".join(f"{k} {v:.0f} cm" for k, v in dims.items() if v) or "unknown"
     what = (f"a {brand_model} ({description})" if brand_model else
             f"an item comparable to: {description}" + (" (a framed print / poster, not an original)" if is_art else ""))
-    g = await grounded_search("pricing_items", ledger, PROMPT.format(country_name=COUNTRY_NAMES.get(loc.country, loc.country),
+    try:
+        g = await grounded_search("pricing_items", ledger, PROMPT.format(country_name=COUNTRY_NAMES.get(loc.country, loc.country),
                                                                       what=what, size=size, material=material or "unknown",
                                                                       currency=loc.currency))
+    except BudgetExceeded as exc:
+        return "unpriced", ItemCost(currency=loc.currency), [f"not priced: {exc}"]
     try:
         offers = offers_from_json(parse_json(g.text))
     except Exception:

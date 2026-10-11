@@ -44,6 +44,7 @@ class Ledger:
     model_ms: dict = field(default_factory=lambda: defaultdict(list))
     stage_wall_ms: dict = field(default_factory=dict)
     live_seconds: float = 0.0
+    live_tokens: dict = field(default_factory=lambda: defaultdict(int))   # from Live usage_metadata, by modality
     _lock: threading.Lock = field(default_factory=threading.Lock)
 
     def add(self, stage: str, tin: int, tout: int, ms: int, search: bool = False) -> None:
@@ -67,6 +68,31 @@ class Ledger:
                 ledger.stage_wall_ms[name] = ledger.stage_wall_ms.get(name, 0) + int((time.perf_counter() - self.t) * 1000)
         return _Timer()
 
+    def add_live_usage(self, usage) -> None:
+        """Accumulate a Live session usage_metadata message, by modality."""
+        if usage is None:
+            return
+        with self._lock:
+            for side, details in (("in", usage.prompt_tokens_details), ("out", usage.response_tokens_details)):
+                for d in details or []:
+                    mod = str(getattr(d.modality, "value", d.modality) or "TEXT").upper()
+                    self.live_tokens[f"{side}_{mod}"] += int(d.token_count or 0)
+
+    def cost_so_far(self) -> float:
+        s = SETTINGS
+        with self._lock:
+            tin, tout = sum(self.tokens_in.values()), sum(self.tokens_out.values())
+            searches = sum(self.search_calls.values())
+        return (tin * s.price_in_per_m + tout * s.price_out_per_m) / 1e6 + searches * s.search_price_per_call \
+            + self.live_seconds / 60 * s.live_price_per_min
+
+    def check_budget(self, stage: str) -> None:
+        """Raise BudgetExceeded before a call that would run past the per-sweep caps."""
+        if stage.startswith("pricing") and self.cost_so_far() >= SETTINGS.max_usd_per_sweep:
+            raise BudgetExceeded(f"per-sweep cap ${SETTINGS.max_usd_per_sweep:.2f} reached (LCA_MAX_USD_PER_SWEEP)")
+        if stage == "vision_read" and self.calls.get("vision_read", 0) >= SETTINGS.max_vision_calls:
+            raise BudgetExceeded(f"vision call cap {SETTINGS.max_vision_calls} reached (LCA_MAX_VISION_CALLS)")
+
     def report(self) -> dict[str, Any]:
         s = SETTINGS
         stages = sorted(set(self.calls) | set(self.stage_wall_ms))
@@ -85,12 +111,26 @@ class Ledger:
                 "model_latency_ms_max": lat[-1] if lat else None,
                 "wall_ms": self.stage_wall_ms.get(st),
             }
-        live_cost = self.live_seconds / 60 * s.live_price_per_min
+        live_minutes_cost = self.live_seconds / 60 * s.live_price_per_min
+        lt = self.live_tokens
+        live_token_cost = (lt.get("in_TEXT", 0) * s.live_in_text_per_m + lt.get("in_AUDIO", 0) * s.live_in_audio_per_m
+                           + (lt.get("in_IMAGE", 0) + lt.get("in_VIDEO", 0)) * s.live_in_video_per_m
+                           + lt.get("out_TEXT", 0) * s.live_out_text_per_m + lt.get("out_AUDIO", 0) * s.live_out_audio_per_m) / 1e6
+        # Prefer the session's own token report; fall back to the per-minute estimate.
+        live_cost = live_token_cost if lt else live_minutes_cost
         total += live_cost
         return {"stages": per_stage, "live_session_s": round(self.live_seconds, 1),
+                "live_tokens_reported": dict(self.live_tokens),
+                "live_cost_basis": "session usage_metadata tokens" if lt else "per-minute estimate (LCA_LIVE_PRICE_PER_MIN)",
+                "live_cost_per_minute_estimate_usd": round(live_minutes_cost, 4),
+                "budget_cap_usd": s.max_usd_per_sweep,
                 "live_cost_usd": round(live_cost, 4), "total_cost_usd": round(total, 4),
                 "pricing_assumptions": {"in_per_m": s.price_in_per_m, "out_per_m": s.price_out_per_m,
                                         "search_per_call": s.search_price_per_call, "live_per_min": s.live_price_per_min}}
+
+
+class BudgetExceeded(RuntimeError):
+    """A per-sweep spend or call cap was reached; the caller records the line for review."""
 
 
 def parse_json(text: str) -> Any:
@@ -122,6 +162,7 @@ def _thinking():
 async def call_json(stage: str, ledger: Ledger, contents: list, *, model: str | None = None,
                     schema: Any = None, system: str | None = None, retries: int = 2) -> Any:
     from google.genai import types
+    ledger.check_budget(stage)
     cfg = types.GenerateContentConfig(temperature=0.0, response_mime_type="application/json",
                                       response_schema=schema, system_instruction=system, thinking_config=_thinking())
     last: Exception | None = None
@@ -151,6 +192,7 @@ async def grounded_search(stage: str, ledger: Ledger, prompt: str, *, model: str
     """Gemini + Google Search grounding. Returns text plus the grounding metadata
     so callers can check that each number is backed by a retrieved source."""
     from google.genai import types
+    ledger.check_budget(stage)
     cfg = types.GenerateContentConfig(temperature=0.0, tools=[types.Tool(google_search=types.GoogleSearch())],
                                       thinking_config=_thinking())
     t0 = time.perf_counter()

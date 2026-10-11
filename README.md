@@ -110,9 +110,13 @@ Reference: `awesome-llm-apps/voice_ai_agents/insurance_claim_live_agent_team`. I
 
 ## Cost and latency
 
-Every packet's `meta.cost` holds the measured numbers for that sweep: calls, tokens, cost and model latency per stage, wall time per post-sweep stage, live-session minutes and `time_to_packet_s`. Rates are set in `.env` (`LCA_PRICE_*`); check them against current Google pricing.
+Every packet's `meta.cost` holds the measured numbers for that sweep: calls, tokens, cost and model latency per stage, wall time per post-sweep stage, Live session tokens by modality (or a per-minute estimate if the session did not report them), and `time_to_packet_s`. Each finished sweep also appends a row to `sweeps/usage_log.csv`; `python -m library_claim.cli usage` sums them so you can reconcile with AI Studio > Dashboard > Usage.
 
-Before the first real run, a rough **estimate** for a 3-minute sweep of ~60 books: ~80 vision calls (~$0.8), ~130 grounded pricing searches (~$2), ~15 item searches (~$0.2), live session (~$0.2): about **$3 per sweep**, dominated by search grounding. Replace this paragraph with the measured figure.
+Rates default to the Gemini API paid tier as published on 2026-10-11 ([pricing](https://ai.google.dev/gemini-api/docs/pricing)): `gemini-3.8-flash` $0.75 in / $3.75 out per 1M tokens (doubling on 2027-01-01), Search grounding $14 per 1,000 after 5,000 free a month, `gemini-3.8-live` about $0.025 per minute. Override them in `.env`.
+
+Guards: `LCA_MAX_USD_PER_SWEEP` (default $8) stops pricing searches once a sweep's estimated spend passes it, and `LCA_MAX_VISION_CALLS` (default 250) caps vision reads; anything skipped goes to the review queue, never into an invented number.
+
+**Estimate before the first real run** (replace with the measured figure): a 3-minute sweep of ~60 books is ~80 vision calls (~$1.00), ~150 grounded searches (~$0.80 in tokens, $0 while inside the free 5,000/month, +$2.10 beyond it), ~15 item searches (~$0.10), live session (~$0.15): about **$2 per sweep, $4 once the free searches are used up**.
 
 ## Known limitations (before real-world testing)
 

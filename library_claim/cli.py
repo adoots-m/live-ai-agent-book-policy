@@ -110,8 +110,30 @@ async def _reprice(a):
     print("wrote", jp, "and", hp)
 
 
+def cmd_usage():
+    """Sum usage_log.csv: per sweep, and month to date (compare with AI Studio > Dashboard > Usage)."""
+    import csv
+    from .config import SETTINGS
+    p = SETTINGS.data_dir / "usage_log.csv"
+    if not p.exists():
+        print("no sweeps finished yet")
+        return
+    rows = list(csv.DictReader(open(p, encoding="utf-8")))
+    print(f"{'sweep':24} {'calls':>6} {'search':>6} {'tok in':>9} {'tok out':>9} {'live s':>7} {'USD':>7}")
+    month = rows[-1]["finished_at"][:7]
+    tot = 0.0
+    for r in rows:
+        print(f"{r['sweep_id']:24} {r['model_calls']:>6} {r['search_calls']:>6} {r['tokens_in']:>9} {r['tokens_out']:>9} "
+              f"{float(r['live_session_s']):>7.0f} {float(r['est_cost_usd']):>7.2f}")
+        if r["finished_at"].startswith(month):
+            tot += float(r["est_cost_usd"])
+    searches = sum(int(r["search_calls"]) for r in rows if r["finished_at"].startswith(month))
+    print(f"\n{month}: estimated ${tot:.2f}; {searches} grounded searches (first 5,000/month are free on the paid tier, "
+          "so the real bill can be lower than this estimate)")
+
+
 def main(argv=None):
-    logging.basicConfig(level=logging.WARNING if (argv or sys.argv[1:2]) and (argv or sys.argv[1:])[0] in ("doctor", "try-photo") else logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+    logging.basicConfig(level=logging.WARNING if (argv or sys.argv[1:2]) and (argv or sys.argv[1:])[0] in ("doctor", "try-photo", "usage") else logging.INFO, format="%(levelname)s %(name)s: %(message)s")
     from .config import SETTINGS
     ap = argparse.ArgumentParser(prog="library_claim")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -132,6 +154,7 @@ def main(argv=None):
     rp.add_argument("sweep")
     rp.add_argument("--country", required=True)
     rp.add_argument("--limit", type=int, default=10)
+    sub.add_parser("usage")
     dr = sub.add_parser("doctor")
     dr.add_argument("--live", action="store_true")
     dr.add_argument("--depth", action="store_true")
@@ -152,6 +175,8 @@ def main(argv=None):
         asyncio.run(_process(a))
     elif a.cmd == "reprice":
         asyncio.run(_reprice(a))
+    elif a.cmd == "usage":
+        cmd_usage()
     elif a.cmd == "doctor":
         from .doctor import doctor
         sys.exit(doctor(a.live, a.depth))
